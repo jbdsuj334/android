@@ -1,0 +1,52 @@
+name: Build Cryptomator Lite Signed
+
+on:
+  workflow_dispatch: # 手动触发
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          ref: '1.12.3' # 强制指定分支
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          java-version: '17'
+          distribution: 'temurin'
+          cache: 'gradle'
+
+      - name: Grant execute permission
+        run: chmod +x gradlew
+
+      - name: Build Lite Release APK
+        # 注意：这里必须注入 gradle 脚本里 getApiKey 预期的环境变量
+        # 如果不知道具体的变量名，通常是 DROPBOX_API_KEY 等
+        run: ./gradlew :presentation:assembleLiteRelease
+        env:
+          DROPBOX_API_KEY: ${{ secrets.DROPBOX_API_KEY || 'dummy_key' }}
+          PCLOUD_CLIENT_ID: ${{ secrets.PCLOUD_CLIENT_ID || 'dummy_id' }}
+          ONEDRIVE_API_REDIRCT_URI: "https://localhost/onedrive" 
+          # 即使是 Lite 版，getOnedriveApiKey() 逻辑仍会运行，必须给个符合格式的字符串防止 substring 报错
+
+      - name: Sign APK
+        uses: r0adkll/sign-android-release@v1
+        id: sign_app
+        with:
+          # 路径确认：根据你的 flavor (lite) 和 buildType (release)
+          releaseDirectory: presentation/build/outputs/apk/lite/release
+          signingKeyBase64: ${{ secrets.KEYSTORE_BASE64 }}
+          alias: ${{ secrets.KEY_ALIAS }}
+          keyStorePassword: ${{ secrets.KEYSTORE_PASSWORD }}
+          keyPassword: ${{ secrets.KEY_PASSWORD }}
+
+      - name: Upload Signed APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: Cryptomator-Lite-Signed
+          # sign-android-release 插件会自动输出已签名文件的路径
+          path: ${{ steps.sign_app.outputs.signedReleaseFile }}
